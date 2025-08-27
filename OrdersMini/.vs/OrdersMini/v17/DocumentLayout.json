@@ -5,6 +5,10 @@
     {
       "AbsoluteMoniker": "D:0:0:{61480BEE-2891-4C3D-8253-E45A214EDF59}|OrdersMini.Web\\OrdersMini.Web.csproj|c:\\dev\\mygit\\crud-ddd-basico\\ordersmini\\ordersmini.web\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{61480BEE-2891-4C3D-8253-E45A214EDF59}|OrdersMini.Web\\OrdersMini.Web.csproj|solutionrelative:ordersmini.web\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{13074D7E-E3FA-4412-A895-735883C99A67}|OrdersMini.Domain\\OrdersMini.Domain.csproj|c:\\dev\\mygit\\crud-ddd-basico\\ordersmini\\ordersmini.domain\\entities\\customer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{13074D7E-E3FA-4412-A895-735883C99A67}|OrdersMini.Domain\\OrdersMini.Domain.csproj|solutionrelative:ordersmini.domain\\entities\\customer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -14,8 +18,21 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 1,
           "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Customer.cs",
+              "DocumentMoniker": "C:\\Dev\\mygit\\CRUD-DDD-Basico\\OrdersMini\\OrdersMini.Domain\\Entities\\Customer.cs",
+              "RelativeDocumentMoniker": "OrdersMini.Domain\\Entities\\Customer.cs",
+              "ToolTip": "C:\\Dev\\mygit\\CRUD-DDD-Basico\\OrdersMini\\OrdersMini.Domain\\Entities\\Customer.cs",
+              "RelativeToolTip": "OrdersMini.Domain\\Entities\\Customer.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB0AAAAjAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-08-27T17:56:35.13Z",
+              "EditorCaption": ""
+            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
@@ -24,7 +41,7 @@
               "RelativeDocumentMoniker": "OrdersMini.Web\\Program.cs",
               "ToolTip": "C:\\Dev\\mygit\\CRUD-DDD-Basico\\OrdersMini\\OrdersMini.Web\\Program.cs",
               "RelativeToolTip": "OrdersMini.Web\\Program.cs",
-              "ViewState": "AgIAACQAAAAAAAAAAAAAAE0AAAAlAAAAAAAAAA==",
+              "ViewState": "AgIAAIoAAAAAAAAAAAAAANMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-08-26T15:47:57.441Z",
               "EditorCaption": ""

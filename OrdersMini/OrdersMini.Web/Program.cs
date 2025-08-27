@@ -1,14 +1,20 @@
+using AutoMapper;
 using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OrdersMini.Application.DTOs;
 using OrdersMini.Application.Validations;
+using OrdersMini.Domain.Entities;
 using OrdersMini.Infrastructure;
 using OrdersMini.Infrastructure.Seed;
 using OrdersMini.Web;
 using Serilog;
+using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 
@@ -73,7 +79,6 @@ builder.Services.AddSwaggerGen(c =>
     c.AddSecurityRequirement(new() { [scheme] = new List<string>() });
 });
 
-
 // === Init ===
 WebApplication app = builder.Build();
 
@@ -129,6 +134,78 @@ app.MapPost("/api/auth/login", (string username, string password) =>
 });
 
 // => customers
+app.MapPost("/api/customers", async (CustomerRequest dto, IValidator<CustomerRequest> validator, AppDbContext db, IMapper map) =>
+{
+    FluentValidation.Results.ValidationResult validate = await validator.ValidateAsync(dto);
+    if (!validate.IsValid) return Results.ValidationProblem(validate.ToDictionary());
+
+    if (await db.Customers.IgnoreQueryFilters().AnyAsync(c => c.Email == dto.Email))
+        return Results.Problem(title: "E-mail já cadatrado", statusCode: 409);
+
+    Customer customer = new(dto.Name, dto.Email);
+
+    db.Customers.Add(customer);
+
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/customers/{customer.Id}", map.Map<CustomerResponse>(customer));
+}).RequireAuthorization("WriteAccess");
+
+app.MapGet("/api/customers", async (string search, int page, int pageSize, AppDbContext db, IMapper map) =>
+{
+    page = 1;
+    pageSize = 10;
+
+    IQueryable<Customer> query = db.Customers.AsNoTracking();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        string s = search.ToLower();
+        query = query.Where(c => EF.Functions.Like(c.Name.ToLower(), $"%{s}%") ||
+                                 EF.Functions.Like(c.Email.ToLower(), $"%{s}%"));
+    }
+
+    int total = await query.CountAsync();
+    List<Customer> data = await query.OrderByDescending(c => c.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+
+    return Results.Ok();
+});
+
+app.MapGet("/api/customers/{id:int}", async (int id, AppDbContext db, IMapper map) => await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id) is { } c ? Results.Ok(map.Map<CustomerResponse>(c)) : Results.NotFound());
+
+app.MapPut("/api/customers/{id:int}", async (int id, CustomerRequest dto, IValidator<CustomerRequest> validator, AppDbContext db) =>
+{
+    FluentValidation.Results.ValidationResult validate = await validator.ValidateAsync(dto);
+    
+    if (!validate.IsValid) return Results.ValidationProblem(validate.ToDictionary());
+
+    var customer = await db.Customers.FindAsync(id);
+    
+    if (customer is null) return Results.NotFound();
+    
+    //customer.Name = dto.Name;
+    //customer.Email = dto.Email;
+
+    customer = new Customer(customer.Id, dto.Name, dto.Email); //TODO: Testar!
+
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+}).RequireAuthorization("WriteAccess");
+
+app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) => {
+    var customer = await db.Customers.FindAsync(id);
+    
+    if (customer is null) return Results.NotFound();
+    
+    //customer.IsDeleted = true;
+    customer.SetDelete(); //TODO: Testar!
+    
+    await db.SaveChangesAsync();
+    
+    return Results.NoContent();
+}).RequireAuthorization("CanDelete");
+
 
 
 

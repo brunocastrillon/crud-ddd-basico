@@ -25,6 +25,11 @@ namespace OrdersMini.Domain.Entities
                 
         }
 
+        public void SetDelete()
+        {
+            IsDeleted = !IsDeleted;
+        }
+
         private void ValidationDomain(string name, string email)
         {
             DomainExceptionValidation.When(string.IsNullOrEmpty(name), "name is required");
