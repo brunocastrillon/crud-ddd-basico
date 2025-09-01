@@ -17,6 +17,8 @@ namespace OrdersMini.Infrastructure
             modelBuilder.Entity<Customer>().HasQueryFilter(c => !c.IsDeleted);
             modelBuilder.Entity<Customer>().HasIndex(c => c.Email).IsUnique();
 
+            modelBuilder.Entity<Product>().HasQueryFilter(c => !c.IsDeleted);
+            modelBuilder.Entity<Product>().HasIndex(c => c.Description).IsUnique();
             modelBuilder.Entity<Product>().Property(p => p.Price).HasColumnType("decimal(18,2)");
             
             modelBuilder.Entity<Order>().Property(o => o.Total).HasColumnType("decimal(18,2)");

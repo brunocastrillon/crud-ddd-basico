@@ -1,20 +1,22 @@
 using AutoMapper;
 using FluentValidation;
-using FluentValidation.Results;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+
 using OrdersMini.Application.DTOs;
+using OrdersMini.Application.Mappings;
 using OrdersMini.Application.Validations;
 using OrdersMini.Domain.Entities;
 using OrdersMini.Infrastructure;
 using OrdersMini.Infrastructure.Seed;
 using OrdersMini.Web;
+
 using Serilog;
-using System.ComponentModel.DataAnnotations;
+
 using System.IdentityModel.Tokens.Jwt;
-using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 
@@ -27,7 +29,9 @@ builder.Host.UseSerilog((ctx, cfg) => cfg.ReadFrom.Configuration(ctx.Configurati
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
 // === AutoMapper ===
-builder.Services.AddAutoMapper(typeof(Program).Assembly); // pega Profiles do assembly Web e Application referenciado
+builder.Services.AddAutoMapper(typeof(Profiles).Assembly,         // carrega os Profiles do Application
+                               typeof(Program).Assembly           // (opcional) também do Web, se tiver Profiles lá
+);
 
 // === Validators ===
 builder.Services.AddValidatorsFromAssemblyContaining<CustomerValidation>();
@@ -90,6 +94,10 @@ app.UseSwaggerUI();
 app.UseAuthentication();
 app.UseAuthorization();
 
+#if DEBUG
+app.Services.GetRequiredService<AutoMapper.IConfigurationProvider>().AssertConfigurationIsValid();
+#endif
+
 // === Seed ===
 using (IServiceScope scope = app.Services.CreateScope())
 {
@@ -106,7 +114,7 @@ var users = new[]
 
 // === Endpoints ===
 
-// => auth
+#region Auth
 app.MapPost("/api/auth/login", (string username, string password) =>
 {
     var user = users.SingleOrDefault(x => x.UsernName == username && x.Password == password);
@@ -117,7 +125,7 @@ app.MapPost("/api/auth/login", (string username, string password) =>
         new Claim(JwtRegisteredClaimNames.Sub, user.UsernName),
         new Claim(JwtRegisteredClaimNames.Sub, user.UsernName),
         new Claim(JwtRegisteredClaimNames.Sub, user.UsernName)
-    };
+};
 
     SigningCredentials credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
@@ -132,8 +140,9 @@ app.MapPost("/api/auth/login", (string username, string password) =>
         access_token = new JwtSecurityTokenHandler().WriteToken(token)
     });
 });
+#endregion
 
-// => customers
+#region Customers
 app.MapPost("/api/customers", async (CustomerRequest dto, IValidator<CustomerRequest> validator, AppDbContext db, IMapper map) =>
 {
     FluentValidation.Results.ValidationResult validate = await validator.ValidateAsync(dto);
@@ -145,16 +154,15 @@ app.MapPost("/api/customers", async (CustomerRequest dto, IValidator<CustomerReq
     Customer customer = new(dto.Name, dto.Email);
 
     db.Customers.Add(customer);
-
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/customers/{customer.Id}", map.Map<CustomerResponse>(customer));
-}).RequireAuthorization("WriteAccess");
+});//.RequireAuthorization("WriteAccess");
 
-app.MapGet("/api/customers", async (string search, int page, int pageSize, AppDbContext db, IMapper map) =>
+app.MapGet("/api/customers", async (string? search, int page, int pageSize, IValidator<CustomerRequest> validator, AppDbContext db, IMapper map) =>
 {
-    page = 1;
-    pageSize = 10;
+    //page = 1;
+    //pageSize = 10;
 
     IQueryable<Customer> query = db.Customers.AsNoTracking();
 
@@ -166,9 +174,27 @@ app.MapGet("/api/customers", async (string search, int page, int pageSize, AppDb
     }
 
     int total = await query.CountAsync();
-    List<Customer> data = await query.OrderByDescending(c => c.Id).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
-    return Results.Ok();
+    // - projeção direta no bd visando perfomance
+    List<CustomerResponse> pageData = await query.OrderByDescending(c => c.Id)
+                                                 .Skip((page - 1) * pageSize)
+                                                 .Take(pageSize)
+                                                 .Select(c => new CustomerResponse(c.Id, c.Name, c.Email, c.CreatedAt))
+                                                 .ToListAsync();
+    
+    // - consulta para ser utilizada em com o automapper
+    //List<Customer> data = await query.OrderByDescending(c => c.Id)
+    //                                 .Skip((page - 1) * pageSize)
+    //                                 .Take(pageSize)
+    //                                 .ToListAsync();
+
+    return Results.Ok(new
+    {
+        total,
+        page,
+        pageSize,
+        items = pageData // - resultado usando automapper ==> data.Select(c => map.Map<CustomerResponse>(c))
+    });
 });
 
 app.MapGet("/api/customers/{id:int}", async (int id, AppDbContext db, IMapper map) => await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id) is { } c ? Results.Ok(map.Map<CustomerResponse>(c)) : Results.NotFound());
@@ -176,35 +202,134 @@ app.MapGet("/api/customers/{id:int}", async (int id, AppDbContext db, IMapper ma
 app.MapPut("/api/customers/{id:int}", async (int id, CustomerRequest dto, IValidator<CustomerRequest> validator, AppDbContext db) =>
 {
     FluentValidation.Results.ValidationResult validate = await validator.ValidateAsync(dto);
-    
     if (!validate.IsValid) return Results.ValidationProblem(validate.ToDictionary());
 
-    var customer = await db.Customers.FindAsync(id);
-    
+    Customer? customer = await db.Customers.FindAsync(id);
     if (customer is null) return Results.NotFound();
-    
-    //customer.Name = dto.Name;
-    //customer.Email = dto.Email;
 
-    customer = new Customer(customer.Id, dto.Name, dto.Email); //TODO: Testar!
+    // - muta a ENTIDADE rastreada
+    customer.Update(dto.Name, dto.Email);
 
     await db.SaveChangesAsync();
 
     return Results.NoContent();
-}).RequireAuthorization("WriteAccess");
+});//.RequireAuthorization("WriteAccess");
 
-app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) => {
+app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) =>
+{
     var customer = await db.Customers.FindAsync(id);
-    
+
     if (customer is null) return Results.NotFound();
-    
-    //customer.IsDeleted = true;
-    customer.SetDelete(); //TODO: Testar!
-    
+
+    customer.SetDelete();
+
     await db.SaveChangesAsync();
-    
+
     return Results.NoContent();
-}).RequireAuthorization("CanDelete");
+});//.RequireAuthorization("CanDelete");
+#endregion
+
+#region Products
+app.MapPost("/api/products", async (ProductRequest dto, IValidator<ProductRequest> v, AppDbContext db, IMapper map) =>
+{
+    FluentValidation.Results.ValidationResult val = await v.ValidateAsync(dto);
+    if (!val.IsValid) return Results.ValidationProblem(val.ToDictionary());
+
+    if (await db.Products.IgnoreQueryFilters().AnyAsync(c => c.Description == dto.Description))
+        return Results.Problem(title: "Produto já cadatrado", statusCode: 409);
+
+    Product product = new(dto.Description, dto.Price);
+
+    db.Products.Add(product);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/products/{product.Id}", map.Map<ProductResponse>(product));
+});//.RequireAuthorization("WriteAccess");
+
+app.MapGet("/api/products", async (decimal? minPrice, decimal? maxPrice, string? search, string? sort, int page, int pageSize, IValidator<CustomerRequest> validator, AppDbContext db, IMapper map) =>
+{
+    //page = 1;
+    //pageSize = 10;
+
+    IQueryable<Product> query = db.Products.AsNoTracking();
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var s = search.ToLower();
+        query = query.Where(p => EF.Functions.Like(p.Description.ToLower(), $"%{s}%"));
+    }
+
+    if (minPrice is not null) query = query.Where(p => p.Price >= minPrice);
+    if (maxPrice is not null) query = query.Where(p => p.Price <= maxPrice);
+
+    int total = await query.CountAsync();
+
+    query = sort?.ToLower() switch
+    {
+        "price_asc" => query.OrderBy(p => p.Price),
+        "price_desc" => query.OrderByDescending(p => p.Price),
+        "desc_asc" => query.OrderBy(p => p.Description),
+        "desc_desc" => query.OrderByDescending(p => p.Description),
+        _ => query.OrderBy(p => p.Id)
+    };
+
+    //- projeção direta no bd visando perfomance
+    List<ProductResponse> pageData = await query.Skip((page - 1) * pageSize)
+                                                .Take(pageSize)
+                                                .Select(p => new ProductResponse(p.Id, p.Description, p.Price, p.CreatedAt))
+                                                .ToListAsync();
+
+    // - consulta para ser utilizada em com o automapper
+    //List<Product> pageData = await query.OrderByDescending(p => p.Id)
+    //                                    .Skip((page - 1) * pageSize)
+    //                                    .Take(pageSize)
+    //                                    .ToListAsync();
+    //var data = await query.ToListAsync();
+    //return Results.Ok(data.Select(map.Map<ProductResponse>));
+
+    return Results.Ok(new
+    {
+        total,
+        page,
+        pageSize,
+        items = pageData // - resultado usando automapper ==> data.Select(p => map.Map<ProductResponse>(p))
+    });
+});
+
+app.MapGet("/api/products/{id:int}", async (int id, AppDbContext db, IMapper map) => await db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id) is { } p ? Results.Ok(map.Map<ProductResponse>(p)) : Results.NotFound());
+
+app.MapPut("/api/products/{id:int}", async (int id, ProductRequest dto, IValidator<ProductRequest> v, AppDbContext db) =>
+{
+    FluentValidation.Results.ValidationResult val = await v.ValidateAsync(dto);
+    if (!val.IsValid) return Results.ValidationProblem(val.ToDictionary());
+
+    Product? product = await db.Products.FindAsync(id);
+    if (product is null) return Results.NotFound();
+
+    product.Update(dto.Description, dto.Price);
+
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});//.RequireAuthorization("WriteAccess");
+
+app.MapDelete("/api/products/{id:int}", async (int id, AppDbContext db) =>
+{
+    Product? product = await db.Products.FindAsync(id);
+
+    if (product is null) return Results.NotFound();
+
+    product.SetDelete();
+
+    await db.SaveChangesAsync();
+
+    return Results.NoContent();
+});//.RequireAuthorization("CanDelete");
+#endregion
+
+#region Orders
+
+#endregion
 
 
 
@@ -212,8 +337,7 @@ app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) => {
 
 
 
-
-
+app.Run();
 
 
 
@@ -236,12 +360,6 @@ app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) => {
 
 //app.UseHttpsRedirection();
 
-
-//var summaries = new[]
-//{
-//    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-//};
-
 //app.MapGet("/weatherforecast", () =>
 //{
 //    var forecast = Enumerable.Range(1, 5).Select(index =>
@@ -255,10 +373,3 @@ app.MapDelete("/api/customers/{id:int}", async (int id, AppDbContext db) => {
 //    return forecast;
 //})
 //.WithName("GetWeatherForecast");
-
-//app.Run();
-
-//internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-//{
-//    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-//}

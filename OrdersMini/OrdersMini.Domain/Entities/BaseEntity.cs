@@ -6,9 +6,11 @@ namespace OrdersMini.Domain.Entities
     {
         public int Id { get; protected set; }
 
-        public static void ValidateId(int id)
+        public void ValidateId(int id)
         {
             DomainExceptionValidation.When(id < 0, "invalid id");
+
+            Id = id;
         }
     }
 }

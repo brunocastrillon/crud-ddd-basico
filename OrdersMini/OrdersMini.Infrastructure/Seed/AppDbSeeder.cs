@@ -34,7 +34,7 @@ namespace OrdersMini.Infrastructure.Seed
                 Product? p1 = await dbContext.Products.FirstOrDefaultAsync();
                 Product? p2 = await dbContext.Products.Skip(1).FirstOrDefaultAsync();
 
-                Order? order = new() { CustomerId = customer.Id, Status = OrderStatus.Confirmed };
+                Order? order = new() { CustomerId = customer.Id, Status = OrderStatus.Confirmed, Items = [] };
 
                 order.Items.Add(new OrderItem { ProductId = p1.Id, Quantity = 3, UnitPrice = p1.Price });
                 order.Items.Add(new OrderItem { ProductId = p2.Id, Quantity = 6, UnitPrice = p2.Price });
